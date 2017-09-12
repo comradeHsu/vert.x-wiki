@@ -18,7 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 import java.util.stream.Collectors;
-//还可以在重构一下
+
 public class WikiDatabaseVerticle extends AbstractVerticle {
 
     public static final String CONFIG_WIKIDB_JDBC_URL = "wikidb.jdbc.url";
