@@ -34,7 +34,7 @@ public class MainVerticle extends AbstractVerticle {
 
             Future<String> httpVerticleDeployment = Future.future();
             vertx.deployVerticle(
-                    "io.vertx.guides.wiki.HttpServerVerticle",  //(4)作为字符串的类名称也是指定要部署的垂直线的选项。对于其他JVM语言，基于字符串的约定允许指定模块/脚本。
+                    "verticle.HttpServerVerticle",  //(4)作为字符串的类名称也是指定要部署的垂直线的选项。对于其他JVM语言，基于字符串的约定允许指定模块/脚本。
             new DeploymentOptions().setInstances(2),   // (5)在DeploymentOption类允许指定的若干参数，特别是实例来部署的数目。
             httpVerticleDeployment.completer());
 
