@@ -1,24 +1,9 @@
-package verticle;
+package wiki;
 
-import com.github.rjeschke.txtmark.Processor;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
-import io.vertx.core.http.HttpServer;
-import io.vertx.core.json.JsonArray;
-import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.jdbc.JDBCClient;
-import io.vertx.ext.sql.SQLConnection;
-import io.vertx.ext.web.Router;
-import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.handler.BodyHandler;
-import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
-
-import java.util.Date;
-import java.util.List;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
+import wiki.database.WikiDatabaseVerticle;
 
 /**
  * Created by Administrator on 2017/9/7.
@@ -34,7 +19,7 @@ public class MainVerticle extends AbstractVerticle {
 
             Future<String> httpVerticleDeployment = Future.future();
             vertx.deployVerticle(
-                    "io.vertx.guides.wiki.HttpServerVerticle",  //(4)作为字符串的类名称也是指定要部署的垂直线的选项。对于其他JVM语言，基于字符串的约定允许指定模块/脚本。
+                    "wiki.http.HttpServerVerticle",  //(4)作为字符串的类名称也是指定要部署的垂直线的选项。对于其他JVM语言，基于字符串的约定允许指定模块/脚本。
             new DeploymentOptions().setInstances(2),   // (5)在DeploymentOption类允许指定的若干参数，特别是实例来部署的数目。
             httpVerticleDeployment.completer());
 
