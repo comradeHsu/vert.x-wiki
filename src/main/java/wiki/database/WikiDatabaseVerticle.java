@@ -77,6 +77,7 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
         sqlQueries.put(SqlQuery.SAVE_PAGE, queriesProps.getProperty("save-page"));
         sqlQueries.put(SqlQuery.DELETE_PAGE, queriesProps.getProperty("delete-page"));
         sqlQueries.put(SqlQuery.ALL_PAGES_DATA, queriesProps.getProperty("all-pages-data"));
+        sqlQueries.put(SqlQuery.FETCH_PAGE_BY_ID, queriesProps.getProperty("fetch-page-by-id"));
         return sqlQueries;
     }
 }
