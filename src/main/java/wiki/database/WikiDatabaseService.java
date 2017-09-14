@@ -10,6 +10,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
 
 import java.util.HashMap;
+import java.util.List;
 
 @ProxyGen //ProxyGen注释用于触发该服务的客户机的代理生成代码。
 public interface WikiDatabaseService {
@@ -30,6 +31,9 @@ public interface WikiDatabaseService {
     @Fluent
     WikiDatabaseService deletePage(int id, Handler<AsyncResult<Void>> resultHandler);//由于服务提供异步的结果，服务的方法的最后一个参数需要是Handler<AsyncResult<T>>
     // 其中T是任何合适的用于代码生成的类型的，如上所述。
+
+    @Fluent
+    WikiDatabaseService fetchAllPagesData(Handler<AsyncResult<List<JsonObject>>> resultHandler);
 
     static WikiDatabaseService create(JDBCClient dbClient, HashMap<SqlQuery, String> sqlQueries, Handler<AsyncResult<WikiDatabaseService>> readyHandler) {
         return new WikiDatabaseServiceImpl(dbClient, sqlQueries, readyHandler);
