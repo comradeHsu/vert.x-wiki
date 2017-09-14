@@ -40,6 +40,7 @@ import io.vertx.serviceproxy.ProxyHandler;
 import io.vertx.serviceproxy.ServiceException;
 import io.vertx.serviceproxy.ServiceExceptionMessageCodec;
 import io.vertx.core.json.JsonArray;
+import java.util.List;
 import wiki.database.WikiDatabaseService;
 import io.vertx.ext.jdbc.JDBCClient;
 import wiki.database.SqlQuery;
@@ -144,6 +145,10 @@ public class WikiDatabaseServiceVertxProxyHandler extends ProxyHandler {
         }
         case "deletePage": {
           service.deletePage(json.getValue("id") == null ? null : (json.getLong("id").intValue()), createHandler(msg));
+          break;
+        }
+        case "fetchAllPagesData": {
+          service.fetchAllPagesData(createListHandler(msg));
           break;
         }
 

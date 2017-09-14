@@ -8,13 +8,20 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 @RunWith(VertxUnitRunner.class)
 public class IntegrationTest {
 
-    private Vertx vertx = Vertx.vertx();
+    private Vertx vertx;
+
+    @Before
+    public void prepare(){
+        vertx = Vertx.vertx();
+    }
 
     @Test
     public void start_http_server(TestContext context) {
@@ -39,5 +46,10 @@ public class IntegrationTest {
                         }
                     });
                 }));
+    }
+
+    @After
+    public void finish(TestContext context){
+        vertx.close(context.asyncAssertSuccess());
     }
 }
