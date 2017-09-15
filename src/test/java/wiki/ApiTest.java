@@ -5,6 +5,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.net.JksOptions;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
@@ -24,6 +25,7 @@ public class ApiTest {
 
     private Vertx vertx;
     private WebClient webClient;
+    private String jwtTokenHeaderValue;
 
     @Before
     public void prepare(TestContext context) {
@@ -38,9 +40,15 @@ public class ApiTest {
 
         vertx.deployVerticle(new HttpServerVerticle(), context.asyncAssertSuccess());
 
+//        webClient = WebClient.create(vertx, new WebClientOptions()
+//                .setDefaultHost("localhost")
+//                .setDefaultPort(8080));
+
         webClient = WebClient.create(vertx, new WebClientOptions()
                 .setDefaultHost("localhost")
-                .setDefaultPort(8080));
+                .setDefaultPort(8080)
+                .setSsl(true) //(1)确保SSL
+                .setTrustOptions(new JksOptions().setPath("server-keystore.jks").setPassword("secret"))); //(2)由于证书是自签名的，因此我们需要明确地信任，否则Web客户端连接将像Web浏览器一样失败
     }
 
     @After
@@ -52,25 +60,46 @@ public class ApiTest {
     public void play_with_api(TestContext context) {
         Async async = context.async();
 
-        JsonObject page = new JsonObject()
-                .put("name", "Sample")
-                .put("markdown", "# A page");
-
-        Future<JsonObject> postRequest = Future.future();
-        webClient.post("/api/pages")
-                .as(BodyCodec.jsonObject())
-                .sendJsonObject(page, ar -> {
+        Future<String> tokenRequest = Future.future();
+        webClient.get("/api/token")
+                .putHeader("login", "foo")  // <1>证书作为标题传递
+                .putHeader("password", "bar")
+                .as(BodyCodec.string()) // <2>响应有效载荷是text/plain类型，所以我们使用它来进行身体解码编解码。
+                .send(ar -> {
                     if (ar.succeeded()) {
-                        HttpResponse<JsonObject> postResponse = ar.result();
-                        postRequest.complete(postResponse.body());
+                        tokenRequest.complete(ar.result().body());  // <3>成功后，我们tokenRequest用令牌值完成未来
                     } else {
                         context.fail(ar.cause());
                     }
                 });
+        // (...)
+        // end::fetch-token[]
+
+        JsonObject page = new JsonObject()
+                .put("name", "Sample")
+                .put("markdown", "# A page");
+
+        // tag::use-token[]
+        Future<JsonObject> postRequest = Future.future();
+        tokenRequest.compose(token -> {
+            jwtTokenHeaderValue = "Bearer " + token;  // <1>我们将带有Bearer前缀的令牌存储到下一个请求的字段
+            webClient.post("/api/pages")
+                    .putHeader("Authorization", jwtTokenHeaderValue)  // <2>我们将标记作为标题传递
+                    .as(BodyCodec.jsonObject())
+                    .sendJsonObject(page, ar -> {
+                        if (ar.succeeded()) {
+                            HttpResponse<JsonObject> postResponse = ar.result();
+                            postRequest.complete(postResponse.body());
+                        } else {
+                            context.fail(ar.cause());
+                        }
+                    });
+        }, postRequest);
 
         Future<JsonObject> getRequest = Future.future();
         postRequest.compose(h -> {
             webClient.get("/api/pages")
+                    .putHeader("Authorization", jwtTokenHeaderValue)
                     .as(BodyCodec.jsonObject())
                     .send(ar -> {
                         if (ar.succeeded()) {
@@ -81,6 +110,8 @@ public class ApiTest {
                         }
                     });
         }, getRequest);
+        // (...)
+        // end::use-token[]
 
         Future<JsonObject> putRequest = Future.future();
         getRequest.compose(response -> {
@@ -88,6 +119,7 @@ public class ApiTest {
             context.assertEquals(1, array.size());
             context.assertEquals(0, array.getJsonObject(0).getInteger("id"));
             webClient.put("/api/pages/0")
+                    .putHeader("Authorization", jwtTokenHeaderValue)
                     .as(BodyCodec.jsonObject())
                     .sendJsonObject(new JsonObject()
                             .put("id", 0)
@@ -105,6 +137,7 @@ public class ApiTest {
         putRequest.compose(response -> {
             context.assertTrue(response.getBoolean("success"));
             webClient.delete("/api/pages/0")
+                    .putHeader("Authorization", jwtTokenHeaderValue)
                     .as(BodyCodec.jsonObject())
                     .send(ar -> {
                         if (ar.succeeded()) {
@@ -120,5 +153,7 @@ public class ApiTest {
             context.assertTrue(response.getBoolean("success"));
             async.complete();
         }, Future.failedFuture("Oh?"));
+
+        async.awaitSuccess(5000);
     }
 }

@@ -50,5 +50,10 @@
     <orderEntry type="library" name="Maven: org.slf4j:slf4j-api:1.7.25" level="project" />
     <orderEntry type="library" name="Maven: io.vertx:vertx-web-client:3.4.2" level="project" />
     <orderEntry type="library" name="Maven: io.vertx:vertx-web-common:3.4.2" level="project" />
+    <orderEntry type="library" name="Maven: io.vertx:vertx-auth-shiro:3.4.2" level="project" />
+    <orderEntry type="library" name="Maven: org.apache.shiro:shiro-core:1.2.4" level="project" />
+    <orderEntry type="library" name="Maven: commons-beanutils:commons-beanutils:1.8.3" level="project" />
+    <orderEntry type="library" name="Maven: io.vertx:vertx-auth-jwt:3.4.2" level="project" />
+    <orderEntry type="library" name="Maven: io.vertx:vertx-jwt:3.4.2" level="project" />
   </component>
 </module>

@@ -5,16 +5,25 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.net.JksOptions;
+import io.vertx.ext.auth.AuthProvider;
+import io.vertx.ext.auth.User;
+import io.vertx.ext.auth.jwt.JWTAuth;
+import io.vertx.ext.auth.jwt.JWTOptions;
+import io.vertx.ext.auth.shiro.ShiroAuth;
+import io.vertx.ext.auth.shiro.ShiroAuthOptions;
+import io.vertx.ext.auth.shiro.ShiroAuthRealmType;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.ext.web.codec.BodyCodec;
-import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.*;
+import io.vertx.ext.web.sstore.LocalSessionStore;
 import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,21 +63,96 @@ public class HttpServerVerticle extends AbstractVerticle {
                 .setSsl(true)
                 .setUserAgent("vert-x3"));
 
-        HttpServer server = vertx.createHttpServer();
+//        HttpServer server = vertx.createHttpServer();
+        HttpServer server = vertx.createHttpServer(new HttpServerOptions()
+                .setSsl(true)
+                .setKeyStoreOptions(new JksOptions()
+                        .setPath("server-keystore.jks")
+                        .setPassword("secret")));
+
+        AuthProvider auth = ShiroAuth.create(vertx, new ShiroAuthOptions()
+                .setType(ShiroAuthRealmType.PROPERTIES)
+                .setConfig(new JsonObject()
+                        .put("properties_path", "classpath:wiki-users.properties")));
         // (...)
         // end::db-consume[]
 
         Router router = Router.router(vertx);
+
+        router.route().handler(CookieHandler.create());
+        router.route().handler(BodyHandler.create());
+        router.route().handler(SessionHandler.create(LocalSessionStore.create(vertx)));
+        router.route().handler(UserSessionHandler.create(auth));  // <1>
+
+        AuthHandler authHandler = RedirectAuthHandler.create(auth, "/login"); // <2>
+        router.route("/").handler(authHandler);  // <3>
+        router.route("/wiki/*").handler(authHandler);
+        router.route("/action/*").handler(authHandler);
+
         router.get("/").handler(this::indexHandler);
         router.get("/wiki/:page").handler(this::pageRenderingHandler);
-        router.post().handler(BodyHandler.create());
-        router.post("/save").handler(this::pageUpdateHandler);
-        router.post("/create").handler(this::pageCreateHandler);
-        router.post("/delete").handler(this::pageDeletionHandler);
-        router.get("/backup").handler(this::backupHandler);
+        router.post("/action/save").handler(this::pageUpdateHandler);
+        router.post("/action/create").handler(this::pageCreateHandler);
+        router.get("/action/backup").handler(this::backupHandler);
+        router.post("/action/delete").handler(this::pageDeletionHandler);
+        // end::shiro-routes[]
+        // tag::shiro-login[]
+        router.get("/login").handler(this::loginHandler);
+        router.post("/login-auth").handler(FormLoginHandler.create(auth));  // <1>FormLoginHandler是处理登录提交请求的帮手。默认情况下，它希望HTTP POST请求具有：username作为登录，password密码以及return_url成功时重定向到的URL。
+
+        router.get("/logout").handler(context -> {
+            context.clearUser();  // <2>注销用户是一个简单的从当前清除它RoutingContext。
+            context.response()
+                    .setStatusCode(302)
+                    .putHeader("Location", "/")
+                    .end();
+        });
+        // end::shiro-login[]
+
+        Router apiRouter = Router.router(vertx);
+
+        JWTAuth jwtAuth = JWTAuth.create(vertx, new JsonObject()
+                .put("keyStore", new JsonObject()
+                        .put("path", "keystore.jceks")
+                        .put("type", "jceks")
+                        .put("password", "secret")));
+
+        apiRouter.route().handler(JWTAuthHandler.create(jwtAuth, "/api/token"));
+        // tag::issue-jwt[]
+        apiRouter.get("/token").handler(context -> {
+
+            JsonObject creds = new JsonObject()
+                    .put("username", context.request().getHeader("login"))
+                    .put("password", context.request().getHeader("password"));
+            auth.authenticate(creds, authResult -> {  // <1>我们希望通过HTTP请求标头传递登录名和密码信息，并使用上一节的Apache Shiro身份验证提供程序进行身份验证
+
+                if (authResult.succeeded()) {
+                    User user = authResult.result();
+                    user.isAuthorised("create", canCreate -> {  // <2>成功后，我们可以查询角色
+                        user.isAuthorised("delete", canDelete -> {
+                            user.isAuthorised("update", canUpdate -> {
+
+                                String token = jwtAuth.generateToken( // <3>我们生成令牌username，canCreate，canDelete和canUpdate索赔
+                                        new JsonObject()
+                                                .put("username", context.request().getHeader("login"))
+                                                .put("canCreate", canCreate.succeeded() && canCreate.result())
+                                                .put("canDelete", canDelete.succeeded() && canDelete.result())
+                                                .put("canUpdate", canUpdate.succeeded() && canUpdate.result()),
+                                        new JWTOptions()
+                                                .setSubject("Wiki API")
+                                                .setIssuer("Vert.x"));
+                                context.response().putHeader("Content-Type", "text/plain").end(token);
+                            });
+                        });
+                    });
+                } else {
+                    context.fail(401);
+                }
+            });
+        });
+        // end::issue-jwt[]
 
         // tag::apiRouter[]
-        Router apiRouter = Router.router(vertx);
         apiRouter.get("/pages").handler(this::apiRoot);
         apiRouter.get("/pages/:id").handler(this::apiGetPage);
         apiRouter.post().handler(BodyHandler.create());
@@ -96,20 +180,37 @@ public class HttpServerVerticle extends AbstractVerticle {
 
 
     private void indexHandler(RoutingContext context) {
-        dbService.fetchAllPages(reply -> {
-            if (reply.succeeded()) {
-                context.put("title", "Wiki home");
-                context.put("pages", reply.result().getList());
-                templateEngine.render(context, "templates", "/index.ftl", ar -> {
-                    if (ar.succeeded()) {
-                        context.response().putHeader("Content-Type", "text/html");
-                        context.response().end(ar.result());
-                    } else {
-                        context.fail(ar.cause());
-                    }
-                });
+        context.user().isAuthorised("create", res -> {  //(1)这是如何进行权限查询。请注意，这是一个异步操作
+            boolean canCreatePage = res.succeeded() && res.result();  //(2)我们使用结果
+            dbService.fetchAllPages(reply -> {
+                if (reply.succeeded()) {
+                    context.put("title", "Wiki home");
+                    context.put("pages", reply.result().getList());
+                    context.put("canCreatePage", canCreatePage);  //(3)利用它是HTML模板
+                    context.put("username", context.user().principal().getString("username"));  //(4)利用它是HTML模板
+                    templateEngine.render(context, "templates", "/index.ftl", ar -> {
+                        if (ar.succeeded()) {
+                            context.response().putHeader("Content-Type", "text/html");
+                            context.response().end(ar.result());
+                        } else {
+                            context.fail(ar.cause());
+                        }
+                    });
+                } else {
+                    context.fail(reply.cause());
+                }
+            });
+        });
+    }
+
+    private void loginHandler(RoutingContext context) {
+        context.put("title", "Login");
+        templateEngine.render(context, "templates/login.ftl", ar -> {
+            if (ar.succeeded()) {
+                context.response().putHeader("Content-Type", "text/html");
+                context.response().end(ar.result());
             } else {
-                context.fail(reply.cause());
+                context.fail(ar.cause());
             }
         });
     }
@@ -177,13 +278,22 @@ public class HttpServerVerticle extends AbstractVerticle {
     }
 
     private void pageDeletionHandler(RoutingContext context) {
-        dbService.deletePage(Integer.valueOf(context.request().getParam("id")), reply -> {
-            if (reply.succeeded()) {
-                context.response().setStatusCode(303);
-                context.response().putHeader("Location", "/");
-                context.response().end();
+        context.user().isAuthorised("delete", res -> {
+            if (res.succeeded() && res.result()) {
+
+                // Original code:
+                dbService.deletePage(Integer.valueOf(context.request().getParam("id")), reply -> {
+                    if (reply.succeeded()) {
+                        context.response().setStatusCode(303);
+                        context.response().putHeader("Location", "/");
+                        context.response().end();
+                    } else {
+                        context.fail(reply.cause());
+                    }
+                });
+
             } else {
-                context.fail(reply.cause());
+                context.response().setStatusCode(403).end();
             }
         });
     }
@@ -302,23 +412,27 @@ public class HttpServerVerticle extends AbstractVerticle {
     }
 
     private void apiCreatePage(RoutingContext context) {
-        JsonObject page = context.getBodyAsJson();
-        if (!validateJsonPageDocument(context, page, "name", "markdown")) {
-            return;
-        }
-        dbService.createPage(page.getString("name"), page.getString("markdown"), reply -> {
-            if (reply.succeeded()) {
-                context.response().setStatusCode(201);
-                context.response().putHeader("Content-Type", "application/json");
-                context.response().end(new JsonObject().put("success", true).encode());
-            } else {
-                context.response().setStatusCode(500);
-                context.response().putHeader("Content-Type", "application/json");
-                context.response().end(new JsonObject()
-                        .put("success", false)
-                        .put("error", reply.cause().getMessage()).encode());
+        if (context.user().principal().getBoolean("canCreate", false)) {
+            JsonObject page = context.getBodyAsJson();
+            if (!validateJsonPageDocument(context, page, "name", "markdown")) {
+                return;
             }
-        });
+            dbService.createPage(page.getString("name"), page.getString("markdown"), reply -> {
+                if (reply.succeeded()) {
+                    context.response().setStatusCode(201);
+                    context.response().putHeader("Content-Type", "application/json");
+                    context.response().end(new JsonObject().put("success", true).encode());
+                } else {
+                    context.response().setStatusCode(500);
+                    context.response().putHeader("Content-Type", "application/json");
+                    context.response().end(new JsonObject()
+                            .put("success", false)
+                            .put("error", reply.cause().getMessage()).encode());
+                }
+            });
+        } else {
+            context.fail(401);
+        }
     }
 
     private boolean validateJsonPageDocument(RoutingContext context, JsonObject page, String... expectedKeys) {
@@ -335,14 +449,18 @@ public class HttpServerVerticle extends AbstractVerticle {
     }
 
     private void apiUpdatePage(RoutingContext context) {
-        int id = Integer.valueOf(context.request().getParam("id"));
-        JsonObject page = context.getBodyAsJson();
-        if (!validateJsonPageDocument(context, page, "markdown")) {
-            return;
+        if (context.user().principal().getBoolean("canUpdate", false)) {
+            int id = Integer.valueOf(context.request().getParam("id"));
+            JsonObject page = context.getBodyAsJson();
+            if (!validateJsonPageDocument(context, page, "markdown")) {
+                return;
+            }
+            dbService.savePage(id, page.getString("markdown"), reply -> {
+                handleSimpleDbReply(context, reply);
+            });
+        } else {
+            context.fail(401);
         }
-        dbService.savePage(id, page.getString("markdown"), reply -> {
-            handleSimpleDbReply(context, reply);
-        });
     }
 
     private void handleSimpleDbReply(RoutingContext context, AsyncResult<Void> reply) {
@@ -360,9 +478,13 @@ public class HttpServerVerticle extends AbstractVerticle {
     }
 
     private void apiDeletePage(RoutingContext context) {
-        int id = Integer.valueOf(context.request().getParam("id"));
-        dbService.deletePage(id, reply -> {
-            handleSimpleDbReply(context, reply);
-        });
+        if (context.user().principal().getBoolean("canDelete", false)) {
+            int id = Integer.valueOf(context.request().getParam("id"));
+            dbService.deletePage(id, reply -> {
+                handleSimpleDbReply(context, reply);
+            });
+        } else {
+            context.fail(401);
+        }
     }
 }
