@@ -1,7 +1,9 @@
 package wiki.database;
 
 import io.vertx.codegen.annotations.Fluent;
+import io.vertx.codegen.annotations.GenIgnore;
 import io.vertx.codegen.annotations.ProxyGen;
+import io.vertx.codegen.annotations.VertxGen;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -13,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 
 @ProxyGen //ProxyGen注释用于触发该服务的客户机的代理生成代码。
+@VertxGen
 public interface WikiDatabaseService {
 
     @Fluent //该Fluent注释是可选的，但允许流畅，其中操作可以通过返回服务实例被链接的接口。当服务将从其他JVM语言使用时，这对于代码生成器是非常有用的。
@@ -38,13 +41,14 @@ public interface WikiDatabaseService {
     @Fluent
     WikiDatabaseService fetchPageById(int id, Handler<AsyncResult<JsonObject>> resultHandler);
 
+    @GenIgnore
     static WikiDatabaseService create(JDBCClient dbClient, HashMap<SqlQuery, String> sqlQueries, Handler<AsyncResult<WikiDatabaseService>> readyHandler) {
         return new WikiDatabaseServiceImpl(dbClient, sqlQueries, readyHandler);
     }
-    // end::create[]
 
-    // tag::proxy[]
-    static WikiDatabaseService createProxy(Vertx vertx, String address) {
-        return new WikiDatabaseServiceVertxEBProxy(vertx, address);
+    @GenIgnore
+    static wiki.database.rxjava.WikiDatabaseService createProxy(Vertx vertx, String address) {
+        return new wiki.database.rxjava.WikiDatabaseService(new WikiDatabaseServiceVertxEBProxy(vertx, address));
     }
+
 }

@@ -10,8 +10,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import wiki.database.WikiDatabaseService;
 import wiki.database.WikiDatabaseVerticle;
+import wiki.database.rxjava.WikiDatabaseService;
 
 @RunWith(VertxUnitRunner.class)
 public class DatabaseTest {
@@ -29,7 +29,7 @@ public class DatabaseTest {
 
         vertx.deployVerticle(new WikiDatabaseVerticle(), new DeploymentOptions().setConfig(conf),
                 context.asyncAssertSuccess(id ->  //(2)asyncAssertSuccess有助于提供一个检查异步操作成功的处理程序。有一个没有参数的变体，和一个类似这样的变体，我们可以将结果链接到另一个处理程序
-                        service = WikiDatabaseService.createProxy(vertx, WikiDatabaseVerticle.CONFIG_WIKIDB_QUEUE)));
+                        service = wiki.database.WikiDatabaseService.createProxy(vertx, WikiDatabaseVerticle.CONFIG_WIKIDB_QUEUE)));
     }
 
     @After
